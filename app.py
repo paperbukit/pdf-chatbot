@@ -60,14 +60,16 @@ if uploaded_files:
 
     st.success("✅ PDFs processed!")
 
-    question = st.text_input("Ask your question:")
+    # 🧠 Ask a question form (prevents rerun on download)
+    with st.form("chat_form"):
+        question = st.text_input("Ask your question:")
+        submitted = st.form_submit_button("Ask")
 
-    if question:
+    if submitted and question:
         with st.spinner("🤖 Answering..."):
             docs = vectorstore.similarity_search(question, k=3)
             answer = chain.run(input_documents=docs, question=question)
 
-            # Store in history
             st.session_state.history.append({
                 "question": question,
                 "answer": answer,
@@ -83,3 +85,20 @@ if st.session_state.history:
         for src, pg in entry["sources"]:
             st.markdown(f"📄 `{src} - Page {pg}`")
         st.markdown("---")
+
+# 📤 Export Chat History
+if st.session_state.history:
+    history_text = ""
+    for i, entry in enumerate(st.session_state.history, start=1):
+        history_text += f"Q{i}: {entry['question']}\n"
+        history_text += f"A{i}: {entry['answer']}\n"
+        for src, pg in entry['sources']:
+            history_text += f"Source: {src} - Page {pg}\n"
+        history_text += "\n---\n"
+
+    st.download_button(
+        label="📥 Download Chat History",
+        data=history_text,
+        file_name="chat_history.txt",
+        mime="text/plain"
+    )
