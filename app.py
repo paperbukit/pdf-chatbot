@@ -34,25 +34,45 @@ uploaded_files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_fil
 if uploaded_files:
     st.session_state.saved_files = uploaded_files
 
+# PDF preview/thumbnail display
+# Store file content in session state to avoid multiple reads
+if uploaded_files:
+    st.markdown("### 📄 PDF Previews")
+    for uploaded_file in uploaded_files:
+        if uploaded_file.name not in st.session_state:
+            st.session_state[uploaded_file.name] = uploaded_file.read()
+
+        file_content = st.session_state[uploaded_file.name]
+        if file_content:  # Ensure the file is not empty
+            doc = fitz.open(stream=file_content, filetype="pdf")
+            first_page = doc[0]
+            pix = first_page.get_pixmap(dpi=100)
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            st.image(img, caption=uploaded_file.name, use_container_width=True)
+        else:
+            st.warning(f"The file {uploaded_file.name} is empty and cannot be processed.")
+
 # Process PDFs only once
 if st.session_state.saved_files and not st.session_state.processed:
     all_docs = []
     with st.spinner("📖 Reading PDFs..."):
         for uploaded_file in st.session_state.saved_files:
-            doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-            for i, page in enumerate(doc):
-                text = page.get_text()
-                if text.strip():
-                    content = text
-                else:
-                    pix = page.get_pixmap(dpi=300)
-                    img = Image.open(io.BytesIO(pix.tobytes("png")))
-                    content = pytesseract.image_to_string(img)
+            file_content = st.session_state[uploaded_file.name]  # Reuse stored content
+            if file_content:  # Ensure the file is not empty
+                doc = fitz.open(stream=file_content, filetype="pdf")
+                for i, page in enumerate(doc):
+                    text = page.get_text()
+                    if text.strip():
+                        content = text
+                    else:
+                        pix = page.get_pixmap(dpi=300)
+                        img = Image.open(io.BytesIO(pix.tobytes("png")))
+                        content = pytesseract.image_to_string(img)
 
-                all_docs.append({
-                    "text": content,
-                    "metadata": {"source": uploaded_file.name, "page": i + 1}
-                })
+                    all_docs.append({
+                        "text": content,
+                        "metadata": {"source": uploaded_file.name, "page": i + 1}
+                    })
 
     with st.spinner("✂️ Chunking..."):
         splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=200)
