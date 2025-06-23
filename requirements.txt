@@ -1,2 +1,8 @@
 streamlit
 PyMuPDF
+pytesseract
+Pillow
+langchain
+langchain-community
+faiss-cpu
+sentence-transformers
