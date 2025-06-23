@@ -19,6 +19,27 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 st.set_page_config(page_title="PDF Chatbot with History", layout="wide")
 st.title("📚 Multi-PDF Chatbot (Mistral + OCR + Sources + History)")
 
+# Ensure translate_text function is defined and accessible
+def translate_text(text, target_language="en"):
+    """
+    Translate the given text to the target language.
+
+    Args:
+        text (str): The text to translate.
+        target_language (str): The language code to translate to (default is English).
+
+    Returns:
+        str: Translated text.
+    """
+    try:
+        from googletrans import Translator
+        translator = Translator()
+        translated = translator.translate(text, dest=target_language)
+        return translated.text
+    except Exception as e:
+        st.warning(f"Translation failed: {e}")
+        return text
+
 # Initialize session state
 for key, val in {
     "history": [],
@@ -58,6 +79,11 @@ if uploaded_files:
         else:
             st.warning(f"The file {uploaded_file.name} is empty and cannot be processed.")
 
+# Sidebar plugin system
+st.sidebar.title("Plugin System")
+ocr_enabled = st.sidebar.checkbox("Enable OCR", value=True, key="ocr_toggle")
+translation_enabled = st.sidebar.checkbox("Enable Translation", value=False, key="translation_toggle")
+
 # Process PDFs only once
 if st.session_state.saved_files and not st.session_state.processed:
     all_docs = []
@@ -70,10 +96,15 @@ if st.session_state.saved_files and not st.session_state.processed:
                     text = page.get_text()
                     if text.strip():
                         content = text
-                    else:
+                    elif ocr_enabled:  # Apply OCR only if enabled
                         pix = page.get_pixmap(dpi=300)
                         img = Image.open(io.BytesIO(pix.tobytes("png")))
                         content = pytesseract.image_to_string(img)
+                    else:
+                        content = ""  # Skip OCR if disabled
+
+                    if translation_enabled and content.strip():
+                        content = translate_text(content)  # Apply translation if enabled
 
                     all_docs.append({
                         "text": content,
