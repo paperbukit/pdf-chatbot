@@ -15,7 +15,7 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 
 # 🧠 Streamlit UI
 st.set_page_config(page_title="PDF Chatbot with History", layout="wide")
-st.title("📚 Multi-PDF Chatbot (Mistral + OCR + Sources + History)")
+st.title("📚 Multi-PDF Chatbot (Mistral + OCR + Sources + History + Memory)")
 
 # 🧠 Session state
 if "history" not in st.session_state:
@@ -60,16 +60,23 @@ if uploaded_files:
 
     st.success("✅ PDFs processed!")
 
-    # 🧠 Ask a question form (prevents rerun on download)
-    with st.form("chat_form"):
-        question = st.text_input("Ask your question:")
-        submitted = st.form_submit_button("Ask")
+    # 🧠 Helper: Create context from last N Q&A
+    def get_chat_context(history, current_q):
+        context = ""
+        for item in history[-3:]:  # last 3 Q&A pairs
+            context += f"Q: {item['question']}\nA: {item['answer']}\n"
+        context += f"Q: {current_q}\n"
+        return context
 
-    if submitted and question:
+    question = st.text_input("Ask your question:")
+
+    if question:
         with st.spinner("🤖 Answering..."):
             docs = vectorstore.similarity_search(question, k=3)
-            answer = chain.run(input_documents=docs, question=question)
+            full_prompt = get_chat_context(st.session_state.history, question)
+            answer = chain.run(input_documents=docs, question=full_prompt)
 
+            # Store in history
             st.session_state.history.append({
                 "question": question,
                 "answer": answer,
@@ -86,19 +93,22 @@ if st.session_state.history:
             st.markdown(f"📄 `{src} - Page {pg}`")
         st.markdown("---")
 
-# 📤 Export Chat History
+# 📤 Export Chat History (No rerun)
 if st.session_state.history:
-    history_text = ""
-    for i, entry in enumerate(st.session_state.history, start=1):
-        history_text += f"Q{i}: {entry['question']}\n"
-        history_text += f"A{i}: {entry['answer']}\n"
-        for src, pg in entry['sources']:
-            history_text += f"Source: {src} - Page {pg}\n"
-        history_text += "\n---\n"
+    with st.form("download_form"):
+        submit = st.form_submit_button("📥 Download Chat History")
+        if submit:
+            history_text = ""
+            for i, entry in enumerate(st.session_state.history, start=1):
+                history_text += f"Q{i}: {entry['question']}\n"
+                history_text += f"A{i}: {entry['answer']}\n"
+                for src, pg in entry['sources']:
+                    history_text += f"Source: {src} - Page {pg}\n"
+                history_text += "\n---\n"
 
-    st.download_button(
-        label="📥 Download Chat History",
-        data=history_text,
-        file_name="chat_history.txt",
-        mime="text/plain"
-    )
+            st.download_button(
+                label="Click to download",
+                data=history_text,
+                file_name="chat_history.txt",
+                mime="text/plain"
+            )
