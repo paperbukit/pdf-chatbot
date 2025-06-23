@@ -76,9 +76,14 @@ question = st.text_input("Ask your question:")
 # Prevent duplicate answering
 if question and question != st.session_state.last_question:
     st.session_state.last_question = question
-    with st.spinner("🤖 Answering..."):
+
+    # Combine previous answers for context
+    context = "\n".join([entry['answer'] for entry in st.session_state.history])
+
+    with st.spinner("🤖 Answering with context..."):
         docs = st.session_state.vectorstore.similarity_search(question, k=3)
-        answer = st.session_state.chain.run(input_documents=docs, question=question)
+        answer = st.session_state.chain.run(input_documents=docs, question=f"{context}\n{question}")
+
         st.session_state.history.append({
             "question": question,
             "answer": answer,
