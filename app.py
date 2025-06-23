@@ -17,7 +17,25 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 
 # Streamlit UI setup
 st.set_page_config(page_title="PDF Chatbot with History", layout="wide")
-st.title("📚 Multi-PDF Chatbot (Mistral + OCR + Sources + History)")
+
+# Clean, minimal styling
+st.markdown("""
+<style>
+    /* Clean, minimal styling */
+    .stButton > button {
+        border-radius: 4px;
+    }
+    
+    /* Simple code blocks for sources */
+    code {
+        padding: 2px 5px;
+        background-color: #f0f0f0;
+        border-radius: 3px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("📚 PDF Chatbot")
 
 # Ensure translate_text function is defined and accessible
 def translate_text(text, target_language="en"):
@@ -62,33 +80,47 @@ if uploaded_files:
     st.session_state.saved_files = uploaded_files
 
 # PDF preview/thumbnail display
-# Store file content in session state to avoid multiple reads
 if uploaded_files:
     st.markdown("### 📄 PDF Previews")
-    for uploaded_file in uploaded_files:
+    
+    cols = st.columns(min(3, len(uploaded_files)))
+    
+    for i, uploaded_file in enumerate(uploaded_files):
         if uploaded_file.name not in st.session_state:
             st.session_state[uploaded_file.name] = uploaded_file.read()
 
         file_content = st.session_state[uploaded_file.name]
         if file_content:  # Ensure the file is not empty
-            doc = fitz.open(stream=file_content, filetype="pdf")
-            first_page = doc[0]
-            pix = first_page.get_pixmap(dpi=100)
-            img = Image.open(io.BytesIO(pix.tobytes("png")))
-            st.image(img, caption=uploaded_file.name, use_container_width=True)
+            with cols[i % 3]:
+                doc = fitz.open(stream=file_content, filetype="pdf")
+                first_page = doc[0]
+                pix = first_page.get_pixmap(dpi=100)
+                img = Image.open(io.BytesIO(pix.tobytes("png")))
+                st.image(img, caption=uploaded_file.name, use_container_width=True)
+                st.caption(f"{doc.page_count} pages | {uploaded_file.size//1024} KB")
         else:
-            st.warning(f"The file {uploaded_file.name} is empty and cannot be processed.")
+            with cols[i % 3]:
+                st.warning(f"The file {uploaded_file.name} is empty and cannot be processed.")
 
 # Sidebar plugin system
-st.sidebar.title("Plugin System")
+st.sidebar.title("Plugin Settings")
 ocr_enabled = st.sidebar.checkbox("Enable OCR", value=True, key="ocr_toggle")
 translation_enabled = st.sidebar.checkbox("Enable Translation", value=False, key="translation_toggle")
+
+st.sidebar.markdown("---")
+st.sidebar.caption("Powered by Mistral AI")
 
 # Process PDFs only once
 if st.session_state.saved_files and not st.session_state.processed:
     all_docs = []
-    with st.spinner("📖 Reading PDFs..."):
-        for uploaded_file in st.session_state.saved_files:
+    
+    with st.spinner("� Reading PDFs..."):
+        progress_bar = st.progress(0)
+        total_files = len(st.session_state.saved_files)
+        
+        for idx, uploaded_file in enumerate(st.session_state.saved_files):
+            progress_bar.progress((idx) / total_files)
+            
             file_content = st.session_state[uploaded_file.name]  # Reuse stored content
             if file_content:  # Ensure the file is not empty
                 doc = fitz.open(stream=file_content, filetype="pdf")
@@ -110,6 +142,8 @@ if st.session_state.saved_files and not st.session_state.processed:
                         "text": content,
                         "metadata": {"source": uploaded_file.name, "page": i + 1}
                     })
+        
+        progress_bar.progress(1.0)
 
     with st.spinner("✂️ Chunking..."):
         splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=200)
@@ -119,7 +153,7 @@ if st.session_state.saved_files and not st.session_state.processed:
             for chunk in chunks:
                 split_docs.append(Document(page_content=chunk, metadata=doc["metadata"]))
 
-    with st.spinner("🔍 Embedding..."):
+    with st.spinner("� Embedding..."):
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         st.session_state.vectorstore = FAISS.from_documents(split_docs, embedding=embeddings)
 
@@ -154,16 +188,18 @@ if question and question != st.session_state.last_question:
 
 # Display history
 if st.session_state.history:
-    st.markdown("### 💬 Chat History")
+    st.markdown("### � Chat History")
+    
     for i, entry in enumerate(reversed(st.session_state.history), start=1):
         st.markdown(f"**Q{i}:** {entry['question']}")
         st.markdown(f"**A{i}:** {entry['answer']}")
+        
         for src, pg in entry["sources"]:
             st.markdown(f"📄 `{src} - Page {pg}`")
+        
         st.markdown("---")
 
-# Export chat history
-if st.session_state.history:
+    # Export chat history
     history_text = ""
     for i, entry in enumerate(st.session_state.history, start=1):
         history_text += f"Q{i}: {entry['question']}\n"
