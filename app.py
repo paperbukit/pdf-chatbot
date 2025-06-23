@@ -9,6 +9,8 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.llms import Ollama
 from langchain.chains.question_answering import load_qa_chain
 from langchain.docstore.document import Document
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationalRetrievalChain
 
 # 📌 Tesseract path
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -28,6 +30,10 @@ for key, val in {
 }.items():
     if key not in st.session_state:
         st.session_state[key] = val
+
+# Initialize conversational memory with explicit output key
+if "memory" not in st.session_state:
+    st.session_state.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, output_key="answer")
 
 # File uploader
 uploaded_files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
@@ -90,6 +96,16 @@ if st.session_state.saved_files and not st.session_state.processed:
     st.session_state.processed = True
     st.success("✅ PDFs processed!")
 
+# Update chain to use ConversationalRetrievalChain with explicit output key
+if st.session_state.vectorstore:
+    st.session_state.chain = ConversationalRetrievalChain.from_llm(
+        llm=Ollama(model="mistral"),
+        retriever=st.session_state.vectorstore.as_retriever(),
+        memory=st.session_state.memory,
+        return_source_documents=True,  # Ensure source documents are included in the result
+        output_key="answer"  # Explicitly set the output key for memory
+    )
+
 # Text input
 question = st.text_input("Ask your question:")
 
@@ -97,17 +113,12 @@ question = st.text_input("Ask your question:")
 if question and question != st.session_state.last_question:
     st.session_state.last_question = question
 
-    # Combine previous answers for context
-    context = "\n".join([entry['answer'] for entry in st.session_state.history])
-
-    with st.spinner("🤖 Answering with context..."):
-        docs = st.session_state.vectorstore.similarity_search(question, k=3)
-        answer = st.session_state.chain.run(input_documents=docs, question=f"{context}\n{question}")
-
+    with st.spinner("🤖 Answering with memory..."):
+        result = st.session_state.chain({"question": question})
         st.session_state.history.append({
             "question": question,
-            "answer": answer,
-            "sources": [(doc.metadata.get("source", "Unknown"), doc.metadata.get("page", "?")) for doc in docs]
+            "answer": result["answer"],
+            "sources": [(doc.metadata.get("source", "Unknown"), doc.metadata.get("page", "?")) for doc in result["source_documents"]]
         })
 
 # Display history
