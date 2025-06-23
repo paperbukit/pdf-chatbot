@@ -15,7 +15,7 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 
 # 🧠 Streamlit UI
 st.set_page_config(page_title="PDF Chatbot with History", layout="wide")
-st.title("📚 Multi-PDF Chatbot (Mistral + OCR + Sources + History + Memory)")
+st.title("📚 Multi-PDF Chatbot (Mistral + OCR + Sources + History)")
 
 # 🧠 Session state
 if "history" not in st.session_state:
@@ -60,21 +60,12 @@ if uploaded_files:
 
     st.success("✅ PDFs processed!")
 
-    # 🧠 Helper: Create context from last N Q&A
-    def get_chat_context(history, current_q):
-        context = ""
-        for item in history[-3:]:  # last 3 Q&A pairs
-            context += f"Q: {item['question']}\nA: {item['answer']}\n"
-        context += f"Q: {current_q}\n"
-        return context
-
     question = st.text_input("Ask your question:")
 
     if question:
         with st.spinner("🤖 Answering..."):
             docs = vectorstore.similarity_search(question, k=3)
-            full_prompt = get_chat_context(st.session_state.history, question)
-            answer = chain.run(input_documents=docs, question=full_prompt)
+            answer = chain.run(input_documents=docs, question=question)
 
             # Store in history
             st.session_state.history.append({
@@ -92,23 +83,3 @@ if st.session_state.history:
         for src, pg in entry["sources"]:
             st.markdown(f"📄 `{src} - Page {pg}`")
         st.markdown("---")
-
-# 📤 Export Chat History (No rerun)
-if st.session_state.history:
-    with st.form("download_form"):
-        submit = st.form_submit_button("📥 Download Chat History")
-        if submit:
-            history_text = ""
-            for i, entry in enumerate(st.session_state.history, start=1):
-                history_text += f"Q{i}: {entry['question']}\n"
-                history_text += f"A{i}: {entry['answer']}\n"
-                for src, pg in entry['sources']:
-                    history_text += f"Source: {src} - Page {pg}\n"
-                history_text += "\n---\n"
-
-            st.download_button(
-                label="Click to download",
-                data=history_text,
-                file_name="chat_history.txt",
-                mime="text/plain"
-            )
