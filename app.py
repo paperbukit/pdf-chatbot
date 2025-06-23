@@ -14,7 +14,8 @@ from langchain.chains import ConversationalRetrievalChain
 from deep_translator import GoogleTranslator
 
 # 📌 Tesseract path
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Set Tesseract path dynamically for Streamlit Cloud
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"  # Set Tesseract path for Streamlit Cloud
 
 # Streamlit UI setup
 st.set_page_config(page_title="PDF Chatbot with History", layout="wide")
