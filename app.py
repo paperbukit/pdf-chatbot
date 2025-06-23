@@ -13,21 +13,32 @@ from langchain.docstore.document import Document
 # 📌 Tesseract path
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-# 🧠 Streamlit UI
+# Streamlit UI setup
 st.set_page_config(page_title="PDF Chatbot with History", layout="wide")
 st.title("📚 Multi-PDF Chatbot (Mistral + OCR + Sources + History)")
 
-# 🧠 Session state
-if "history" not in st.session_state:
-    st.session_state.history = []
+# Initialize session state
+for key, val in {
+    "history": [],
+    "vectorstore": None,
+    "chain": None,
+    "processed": False,
+    "saved_files": [],
+    "last_question": ""
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
 
+# File uploader
 uploaded_files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
-
 if uploaded_files:
-    all_docs = []
+    st.session_state.saved_files = uploaded_files
 
+# Process PDFs only once
+if st.session_state.saved_files and not st.session_state.processed:
+    all_docs = []
     with st.spinner("📖 Reading PDFs..."):
-        for uploaded_file in uploaded_files:
+        for uploaded_file in st.session_state.saved_files:
             doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
             for i, page in enumerate(doc):
                 text = page.get_text()
@@ -53,28 +64,28 @@ if uploaded_files:
 
     with st.spinner("🔍 Embedding..."):
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        vectorstore = FAISS.from_documents(split_docs, embedding=embeddings)
+        st.session_state.vectorstore = FAISS.from_documents(split_docs, embedding=embeddings)
 
-    llm = Ollama(model="mistral")
-    chain = load_qa_chain(llm, chain_type="stuff")
-
+    st.session_state.chain = load_qa_chain(Ollama(model="mistral"), chain_type="stuff")
+    st.session_state.processed = True
     st.success("✅ PDFs processed!")
 
-    question = st.text_input("Ask your question:")
+# Text input
+question = st.text_input("Ask your question:")
 
-    if question:
-        with st.spinner("🤖 Answering..."):
-            docs = vectorstore.similarity_search(question, k=3)
-            answer = chain.run(input_documents=docs, question=question)
+# Prevent duplicate answering
+if question and question != st.session_state.last_question:
+    st.session_state.last_question = question
+    with st.spinner("🤖 Answering..."):
+        docs = st.session_state.vectorstore.similarity_search(question, k=3)
+        answer = st.session_state.chain.run(input_documents=docs, question=question)
+        st.session_state.history.append({
+            "question": question,
+            "answer": answer,
+            "sources": [(doc.metadata.get("source", "Unknown"), doc.metadata.get("page", "?")) for doc in docs]
+        })
 
-            # Store in history
-            st.session_state.history.append({
-                "question": question,
-                "answer": answer,
-                "sources": [(doc.metadata.get("source", "Unknown"), doc.metadata.get("page", "?")) for doc in docs]
-            })
-
-# 📜 Show chat history
+# Display history
 if st.session_state.history:
     st.markdown("### 💬 Chat History")
     for i, entry in enumerate(reversed(st.session_state.history), start=1):
@@ -83,3 +94,21 @@ if st.session_state.history:
         for src, pg in entry["sources"]:
             st.markdown(f"📄 `{src} - Page {pg}`")
         st.markdown("---")
+
+# Export chat history
+if st.session_state.history:
+    history_text = ""
+    for i, entry in enumerate(st.session_state.history, start=1):
+        history_text += f"Q{i}: {entry['question']}\n"
+        history_text += f"A{i}: {entry['answer']}\n"
+        for src, pg in entry["sources"]:
+            history_text += f"Source: {src} - Page {pg}\n"
+        history_text += "---\n"
+
+    st.download_button(
+        label="Download Chat History",
+        data=history_text,
+        file_name="chat_history.txt",
+        mime="text/plain",
+        key="download_button"
+    )
