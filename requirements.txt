@@ -2,8 +2,12 @@ streamlit
 PyMuPDF
 pytesseract
 Pillow
-langchain
-langchain-community
+langchain==0.3.26
+langchain-core==0.3.66
+langchain-community==0.3.26
 faiss-cpu
 sentence-transformers
-googletrans==4.0.0-rc1
+deep-translator
+huggingface_hub==0.20.3
+transformers
+langchain-groq

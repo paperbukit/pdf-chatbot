@@ -6,11 +6,12 @@ import io
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import CharacterTextSplitter
-from langchain_community.llms import Ollama
+from langchain_groq import ChatGroq  # <-- add this import
 from langchain.chains.question_answering import load_qa_chain
 from langchain.docstore.document import Document
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
+from deep_translator import GoogleTranslator
 
 # 📌 Tesseract path
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -50,10 +51,7 @@ def translate_text(text, target_language="en"):
         str: Translated text.
     """
     try:
-        from googletrans import Translator
-        translator = Translator()
-        translated = translator.translate(text, dest=target_language)
-        return translated.text
+        return GoogleTranslator(source='auto', target=target_language).translate(text)
     except Exception as e:
         st.warning(f"Translation failed: {e}")
         return text
@@ -153,18 +151,27 @@ if st.session_state.saved_files and not st.session_state.processed:
             for chunk in chunks:
                 split_docs.append(Document(page_content=chunk, metadata=doc["metadata"]))
 
-    with st.spinner("� Embedding..."):
+    with st.spinner("🔍 Embedding..."):
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         st.session_state.vectorstore = FAISS.from_documents(split_docs, embedding=embeddings)
 
-    st.session_state.chain = load_qa_chain(Ollama(model="mistral"), chain_type="stuff")
+    # Use Groq LLM
+    llm = ChatGroq(
+        groq_api_key=st.secrets["GROQ_API_KEY"],
+        model_name="llama3-8b-8192"  # or "mixtral-8x7b-32768" for larger model
+    )
+    st.session_state.chain = load_qa_chain(llm, chain_type="stuff")
     st.session_state.processed = True
     st.success("✅ PDFs processed!")
 
 # Update chain to use ConversationalRetrievalChain with explicit output key
 if st.session_state.vectorstore:
+    llm = ChatGroq(
+        groq_api_key=st.secrets["GROQ_API_KEY"],
+        model_name="llama3-8b-8192"
+    )
     st.session_state.chain = ConversationalRetrievalChain.from_llm(
-        llm=Ollama(model="mistral"),
+        llm=llm,
         retriever=st.session_state.vectorstore.as_retriever(),
         memory=st.session_state.memory,
         return_source_documents=True,  # Ensure source documents are included in the result
@@ -188,7 +195,7 @@ if question and question != st.session_state.last_question:
 
 # Display history
 if st.session_state.history:
-    st.markdown("### � Chat History")
+    st.markdown("### 🔄 Chat History")
     
     for i, entry in enumerate(reversed(st.session_state.history), start=1):
         st.markdown(f"**Q{i}:** {entry['question']}")
